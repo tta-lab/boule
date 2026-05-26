@@ -121,6 +121,38 @@ func (q *Queries) GetMessageByID(ctx context.Context, id string) (Message, error
 	return i, err
 }
 
+const listEntities = `-- name: ListEntities :many
+SELECT DISTINCT entity FROM (
+    SELECT sender AS entity FROM messages
+    UNION
+    SELECT recipient AS entity FROM messages
+)
+ORDER BY entity
+`
+
+func (q *Queries) ListEntities(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listEntities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var entity string
+		if err := rows.Scan(&entity); err != nil {
+			return nil, err
+		}
+		items = append(items, entity)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markRead = `-- name: MarkRead :exec
 UPDATE messages
 SET read = 1

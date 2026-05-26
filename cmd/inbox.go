@@ -10,15 +10,12 @@ import (
 )
 
 var inboxCmd = &cobra.Command{
-	Use:   "inbox [flags]",
+	Use:   "inbox [flags] <recipient>",
 	Short: "Show unread messages",
 	Long:  "Show unread messages for a recipient.",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		recipient, _ := cmd.Flags().GetString("to")
-		if recipient == "" {
-			return fmt.Errorf("--to is required")
-		}
-
+		recipient := args[0]
 		asJSON, _ := cmd.Flags().GetBool("json")
 
 		q := db.New(database)
@@ -46,8 +43,6 @@ var inboxCmd = &cobra.Command{
 }
 
 func init() {
-	inboxCmd.Flags().String("to", "", "recipient to check inbox for (required)")
-	_ = inboxCmd.MarkFlagRequired("to")
 	inboxCmd.Flags().Bool("json", false, "output as JSON")
 	rootCmd.AddCommand(inboxCmd)
 }

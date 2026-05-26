@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -23,7 +22,7 @@ var sendCmd = &cobra.Command{
 
 		recipient := args[0]
 
-		content, err := io.ReadAll(os.Stdin)
+		content, err := io.ReadAll(cmd.InOrStdin())
 		if err != nil {
 			return fmt.Errorf("read stdin: %w", err)
 		}
@@ -43,7 +42,7 @@ var sendCmd = &cobra.Command{
 			return fmt.Errorf("send message: %w", err)
 		}
 
-		fmt.Fprintf(os.Stdout, "sent %s -> %s (id: %s)\n", msg.Sender, msg.Recipient, msg.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "sent %s -> %s (id: %s)\n", msg.Sender, msg.Recipient, msg.ID)
 		return nil
 	},
 }

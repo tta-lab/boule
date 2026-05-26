@@ -24,3 +24,11 @@ WHERE id = ?;
 -- name: GetMessageByID :one
 SELECT * FROM messages
 WHERE id = ?;
+
+-- name: ListEntities :many
+SELECT DISTINCT entity FROM (
+    SELECT sender AS entity FROM messages
+    UNION
+    SELECT recipient AS entity FROM messages
+)
+ORDER BY entity;
