@@ -121,25 +121,15 @@ func (q *Queries) GetMessageByID(ctx context.Context, id string) (Message, error
 	return i, err
 }
 
-const markRead = `-- name: MarkRead :one
+const markRead = `-- name: MarkRead :exec
 UPDATE messages
 SET read = 1
 WHERE id = ?
-RETURNING id, sender, recipient, content, read, created_at
 `
 
-func (q *Queries) MarkRead(ctx context.Context, id string) (Message, error) {
-	row := q.db.QueryRowContext(ctx, markRead, id)
-	var i Message
-	err := row.Scan(
-		&i.ID,
-		&i.Sender,
-		&i.Recipient,
-		&i.Content,
-		&i.Read,
-		&i.CreatedAt,
-	)
-	return i, err
+func (q *Queries) MarkRead(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, markRead, id)
+	return err
 }
 
 const sendMessage = `-- name: SendMessage :one

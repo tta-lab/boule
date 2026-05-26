@@ -16,11 +16,10 @@ WHERE (? = '' OR sender = ?)
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?;
 
--- name: MarkRead :one
+-- name: MarkRead :exec
 UPDATE messages
 SET read = 1
-WHERE id = ?
-RETURNING *;
+WHERE id = ?;
 
 -- name: GetMessageByID :one
 SELECT * FROM messages
