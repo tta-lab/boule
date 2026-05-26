@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	db   *sql.DB
-	dbPath string
+	database *sql.DB
+	dbPath   string
 )
 
 var rootCmd = &cobra.Command{
@@ -24,7 +24,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		var err error
-		db, err = store.Open(dbPath)
+		database, err = store.Open(dbPath)
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
@@ -32,8 +32,8 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if db != nil {
-			db.Close()
+		if database != nil {
+			database.Close()
 		}
 	},
 }
