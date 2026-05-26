@@ -50,6 +50,6 @@ var sendCmd = &cobra.Command{
 
 func init() {
 	sendCmd.Flags().String("from", "", "sender identity (required)")
-	sendCmd.MarkFlagRequired("from")
+	_ = sendCmd.MarkFlagRequired("from")
 	rootCmd.AddCommand(sendCmd)
 }

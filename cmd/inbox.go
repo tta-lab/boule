@@ -47,7 +47,7 @@ var inboxCmd = &cobra.Command{
 
 func init() {
 	inboxCmd.Flags().String("to", "", "recipient to check inbox for (required)")
-	inboxCmd.MarkFlagRequired("to")
+	_ = inboxCmd.MarkFlagRequired("to")
 	inboxCmd.Flags().Bool("json", false, "output as JSON")
 	rootCmd.AddCommand(inboxCmd)
 }

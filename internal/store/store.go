@@ -36,7 +36,7 @@ func Open(dbPath string) (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 
 	if err := Migrate(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 

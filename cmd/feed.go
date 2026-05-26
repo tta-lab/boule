@@ -47,7 +47,7 @@ var feedCmd = &cobra.Command{
 		}
 
 		if len(msgs) == 0 {
-			fmt.Fprintln(os.Stdout, "no messages")
+			_, _ = fmt.Fprintln(os.Stdout, "no messages")
 			return nil
 		}
 
