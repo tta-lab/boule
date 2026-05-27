@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/tta-lab/boule/internal/db"
@@ -41,13 +40,13 @@ var feedCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(msgs)
 		}
 
 		if len(msgs) == 0 {
-			_, _ = fmt.Fprintln(os.Stdout, "no messages")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no messages")
 			return nil
 		}
 
@@ -56,7 +55,7 @@ var feedCmd = &cobra.Command{
 			if m.Read == 1 {
 				readMark = "x"
 			}
-			fmt.Fprintf(os.Stdout, "[%s] [%s] %s -> %s: %s\n", m.ID, readMark, m.Sender, m.Recipient, m.Content)
+			fmt.Fprintf(cmd.OutOrStdout(), "[%s] [%s] %s -> %s: %s\n", m.ID, readMark, m.Sender, m.Recipient, m.Content)
 		}
 		return nil
 	},

@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/tta-lab/boule/internal/db"
@@ -25,18 +24,18 @@ var inboxCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(msgs)
 		}
 
 		if len(msgs) == 0 {
-			fmt.Fprintf(os.Stdout, "no unread messages for %s\n", recipient)
+			fmt.Fprintf(cmd.OutOrStdout(), "no unread messages for %s\n", recipient)
 			return nil
 		}
 
 		for _, m := range msgs {
-			fmt.Fprintf(os.Stdout, "[%s] %s: %s\n", m.ID, m.Sender, m.Content)
+			fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s: %s\n", m.ID, m.Sender, m.Content)
 		}
 		return nil
 	},

@@ -1,5 +1,3 @@
--- Canonical source: internal/store/migrations/001_create_messages.sql (embedded via go:embed)
--- This copy exists because sqlc reads schema from this directory.
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     sender TEXT NOT NULL,

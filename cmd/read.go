@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/tta-lab/boule/internal/db"
@@ -29,12 +28,12 @@ var readCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(msg)
 		}
 
-		fmt.Fprintf(os.Stdout, "marked as read: [%s] %s -> %s: %s\n", msg.ID, msg.Sender, msg.Recipient, msg.Content)
+		fmt.Fprintf(cmd.OutOrStdout(), "marked as read: [%s] %s -> %s: %s\n", msg.ID, msg.Sender, msg.Recipient, msg.Content)
 		return nil
 	},
 }

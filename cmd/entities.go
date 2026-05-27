@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/tta-lab/boule/internal/db"
@@ -23,18 +22,18 @@ var entitiesCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
 			return enc.Encode(entities)
 		}
 
 		if len(entities) == 0 {
-			_, _ = fmt.Fprintln(os.Stdout, "no entities found")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no entities found")
 			return nil
 		}
 
 		for _, e := range entities {
-			_, _ = fmt.Fprintln(os.Stdout, e)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), e)
 		}
 		return nil
 	},

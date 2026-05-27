@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/tta-lab/boule/internal/db"
+	_ "modernc.org/sqlite"
+
 	"github.com/tta-lab/boule/internal/store"
 )
 
@@ -23,15 +23,12 @@ const (
 
 type testEnv struct {
 	db     *sql.DB
-	q      *db.Queries
 	dbPath string
-	root   *cobra.Command
 }
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "test.db")
+	dbPath := filepath.Join(t.TempDir(), "test.db")
 
 	d, err := store.Open(dbPath)
 	if err != nil {
@@ -39,215 +36,48 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 	t.Cleanup(func() { _ = d.Close() })
 
-	env := &testEnv{db: d, q: db.New(d), dbPath: dbPath}
-	env.root = env.buildRoot()
-	return env
+	return &testEnv{db: d, dbPath: dbPath}
 }
 
-func (e *testEnv) buildRoot() *cobra.Command {
-	root := &cobra.Command{Use: "bo"}
-	root.AddCommand(
-		e.buildSend(),
-		e.buildInbox(),
-		e.buildFeed(),
-		e.buildRead(),
-		e.buildEntities(),
-	)
+func (e *testEnv) seed(t *testing.T, query string, args ...any) {
+	t.Helper()
+	if _, err := e.db.Exec(query, args...); err != nil {
+		t.Fatalf("seed %q: %v", query, err)
+	}
+}
+
+func (e *testEnv) newRoot() *cobra.Command {
+	root := &cobra.Command{
+		Use: "bo",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			database = e.db
+			return nil
+		},
+	}
+	root.AddCommand(sendCmd, inboxCmd, feedCmd, readCmd, entitiesCmd)
 	return root
 }
 
-func (e *testEnv) buildSend() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:  "send [flags] <recipient>",
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sender, _ := cmd.Flags().GetString("from")
-			if sender == "" {
-				return fmt.Errorf("--from is required")
-			}
-			content, err := readAll(cmd.InOrStdin())
-			if err != nil {
-				return err
-			}
-			if len(content) == 0 {
-				return fmt.Errorf("message content is empty")
-			}
-			msg, err := e.q.SendMessage(cmd.Context(), db.SendMessageParams{
-				ID: fmt.Sprintf("test-%d", os.Getpid()), Sender: sender, Recipient: args[0], Content: string(content),
-			})
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "sent %s -> %s (id: %s)\n", msg.Sender, msg.Recipient, msg.ID)
-			return nil
-		},
-	}
-	cmd.Flags().String("from", "", "sender")
-	_ = cmd.MarkFlagRequired("from")
-	return cmd
+func (e *testEnv) run(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	return e.runWithStdin(t, "", args...)
 }
 
-func (e *testEnv) buildInbox() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:  "inbox <recipient>",
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			asJSON, _ := cmd.Flags().GetBool("json")
-			msgs, err := e.q.GetInbox(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(msgs)
-			}
-			if len(msgs) == 0 {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no unread messages for %s\n", args[0])
-				return nil
-			}
-			for _, m := range msgs {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s: %s\n", m.ID, m.Sender, m.Content)
-			}
-			return nil
-		},
-	}
-	cmd.Flags().Bool("json", false, "JSON output")
-	return cmd
-}
-
-func (e *testEnv) buildFeed() *cobra.Command {
-	cmd := &cobra.Command{
-		Use: "feed",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			from, _ := cmd.Flags().GetString("from")
-			unreadOnly, _ := cmd.Flags().GetBool("unread")
-			asJSON, _ := cmd.Flags().GetBool("json")
-			var unreadFilter int64
-			if unreadOnly {
-				unreadFilter = 1
-			}
-			msgs, err := e.q.GetFeed(cmd.Context(), db.GetFeedParams{
-				Column1: from, Sender: from, Column3: "", Recipient: "",
-				Column5: unreadFilter, Limit: 100, Offset: 0,
-			})
-			if err != nil {
-				return err
-			}
-			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(msgs)
-			}
-			if len(msgs) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no messages")
-				return nil
-			}
-			for _, m := range msgs {
-				mark := " "
-				if m.Read == 1 {
-					mark = "x"
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%s] [%s] %s -> %s: %s\n", m.ID, mark, m.Sender, m.Recipient, m.Content)
-			}
-			return nil
-		},
-	}
-	cmd.Flags().String("from", "", "filter by sender")
-	cmd.Flags().Bool("unread", false, "only unread")
-	cmd.Flags().Bool("json", false, "JSON output")
-	return cmd
-}
-
-func (e *testEnv) buildRead() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:  "read <id>",
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			asJSON, _ := cmd.Flags().GetBool("json")
-			if err := e.q.MarkRead(cmd.Context(), args[0]); err != nil {
-				return fmt.Errorf("mark read: %w", err)
-			}
-			msg, err := e.q.GetMessageByID(cmd.Context(), args[0])
-			if err != nil {
-				return fmt.Errorf("get message: %w", err)
-			}
-			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(msg)
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-				"marked as read: [%s] %s -> %s: %s\n",
-				msg.ID, msg.Sender, msg.Recipient, msg.Content)
-			return nil
-		},
-	}
-	cmd.Flags().Bool("json", false, "JSON output")
-	return cmd
-}
-
-func (e *testEnv) buildEntities() *cobra.Command {
-	cmd := &cobra.Command{
-		Use: "entities",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			asJSON, _ := cmd.Flags().GetBool("json")
-			ents, err := e.q.ListEntities(cmd.Context())
-			if err != nil {
-				return err
-			}
-			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(ents)
-			}
-			if len(ents) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "no entities found")
-				return nil
-			}
-			for _, ent := range ents {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), ent)
-			}
-			return nil
-		},
-	}
-	cmd.Flags().Bool("json", false, "JSON output")
-	return cmd
-}
-
-func (e *testEnv) run(args ...string) (string, error) {
-	return e.runWithStdin("", args...)
-}
-
-func (e *testEnv) runWithStdin(stdin string, args ...string) (string, error) {
+func (e *testEnv) runWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
+	t.Helper()
 	buf := new(bytes.Buffer)
-	e.root.SetArgs(args)
-	e.root.SetIn(strings.NewReader(stdin))
-	e.root.SetOut(buf)
-	e.root.SetErr(buf)
-	err := e.root.Execute()
+	root := e.newRoot()
+	root.SetArgs(args)
+	root.SetIn(strings.NewReader(stdin))
+	root.SetOut(buf)
+	root.SetErr(buf)
+	err := root.Execute()
 	return buf.String(), err
-}
-
-func readAll(r interface{ Read([]byte) (int, error) }) ([]byte, error) {
-	buf := make([]byte, 0, 1024)
-	tmp := make([]byte, 256)
-	for {
-		n, err := r.Read(tmp)
-		buf = append(buf, tmp[:n]...)
-		if err != nil {
-			if err.Error() == "EOF" {
-				break
-			}
-			return buf, err
-		}
-	}
-	return buf, nil
 }
 
 func TestSendCommand(t *testing.T) {
 	env := newTestEnv(t)
-	output, err := env.runWithStdin("hello world", "send", "--from", testAlice, testBob)
+	output, err := env.runWithStdin(t, "hello world", "send", "--from", testAlice, testBob)
 	if err != nil {
 		t.Fatalf("send failed: %v", err)
 	}
@@ -258,7 +88,7 @@ func TestSendCommand(t *testing.T) {
 
 func TestSendEmptyContent(t *testing.T) {
 	env := newTestEnv(t)
-	_, err := env.runWithStdin("", "send", "--from", testAlice, testBob)
+	_, err := env.runWithStdin(t, "", "send", "--from", testAlice, testBob)
 	if err == nil {
 		t.Fatal("expected error for empty content")
 	}
@@ -266,13 +96,9 @@ func TestSendEmptyContent(t *testing.T) {
 
 func TestInboxCommand(t *testing.T) {
 	env := newTestEnv(t)
-	_, err := env.q.SendMessage(t.Context(), db.SendMessageParams{
-		ID: "t1", Sender: testAlice, Recipient: testBob, Content: "inbox test",
-	})
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	output, err := env.run("inbox", testBob)
+	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		"t1", testAlice, testBob, "inbox test")
+	output, err := env.run(t, "inbox", testBob)
 	if err != nil {
 		t.Fatalf("inbox failed: %v", err)
 	}
@@ -283,7 +109,7 @@ func TestInboxCommand(t *testing.T) {
 
 func TestInboxEmpty(t *testing.T) {
 	env := newTestEnv(t)
-	output, err := env.run("inbox", "nobody")
+	output, err := env.run(t, "inbox", "nobody")
 	if err != nil {
 		t.Fatalf("inbox failed: %v", err)
 	}
@@ -294,17 +120,18 @@ func TestInboxEmpty(t *testing.T) {
 
 func TestInboxJSON(t *testing.T) {
 	env := newTestEnv(t)
-	_, err := env.q.SendMessage(t.Context(), db.SendMessageParams{
-		ID: "tj", Sender: testAlice, Recipient: testBob, Content: "json test",
-	})
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	output, err := env.run("inbox", testBob, "--json")
+	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		"tj", testAlice, testBob, "json test")
+	output, err := env.run(t, "inbox", testBob, "--json")
 	if err != nil {
 		t.Fatalf("inbox --json failed: %v", err)
 	}
-	var msgs []db.Message
+	var msgs []struct {
+		ID        string `json:"id"`
+		Sender    string `json:"sender"`
+		Recipient string `json:"recipient"`
+		Content   string `json:"content"`
+	}
 	if err := json.Unmarshal([]byte(output), &msgs); err != nil {
 		t.Fatalf("invalid JSON: %v: raw=%s", err, output)
 	}
@@ -321,14 +148,10 @@ func TestFeedCommand(t *testing.T) {
 		{testAlice, testCharlie, "msg 3"},
 	}
 	for i, m := range seeds {
-		_, err := env.q.SendMessage(t.Context(), db.SendMessageParams{
-			ID: fmt.Sprintf("f%d", i), Sender: m.s, Recipient: m.r, Content: m.c,
-		})
-		if err != nil {
-			t.Fatalf("seed %d: %v", i, err)
-		}
+		env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+			fmt.Sprintf("f%d", i), m.s, m.r, m.c)
 	}
-	output, err := env.run("feed")
+	output, err := env.run(t, "feed")
 	if err != nil {
 		t.Fatalf("feed failed: %v", err)
 	}
@@ -341,13 +164,11 @@ func TestFeedCommand(t *testing.T) {
 
 func TestFeedFilterFrom(t *testing.T) {
 	env := newTestEnv(t)
-	_, _ = env.q.SendMessage(t.Context(), db.SendMessageParams{
-		ID: "f1", Sender: testAlice, Recipient: testBob, Content: "from alice",
-	})
-	_, _ = env.q.SendMessage(t.Context(), db.SendMessageParams{
-		ID: "f2", Sender: testBob, Recipient: testAlice, Content: "from bob",
-	})
-	output, err := env.run("feed", "--from", testAlice)
+	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		"f1", testAlice, testBob, "from alice")
+	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		"f2", testBob, testAlice, "from bob")
+	output, err := env.run(t, "feed", "--from", testAlice)
 	if err != nil {
 		t.Fatalf("feed --from failed: %v", err)
 	}
@@ -361,31 +182,27 @@ func TestFeedFilterFrom(t *testing.T) {
 
 func TestReadCommand(t *testing.T) {
 	env := newTestEnv(t)
-	_, err := env.q.SendMessage(t.Context(), db.SendMessageParams{
-		ID: "r1", Sender: testAlice, Recipient: testBob, Content: "read test",
-	})
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	output, err := env.run("read", "r1")
+	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		"r1", testAlice, testBob, "read test")
+	output, err := env.run(t, "read", "r1")
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
 	if !strings.Contains(output, "marked as read") {
 		t.Fatalf("expected marked as read: %s", output)
 	}
-	msg, err := env.q.GetMessageByID(t.Context(), "r1")
-	if err != nil {
+	var read int
+	if err := env.db.QueryRow("SELECT read FROM messages WHERE id = ?", "r1").Scan(&read); err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if msg.Read != 1 {
-		t.Fatalf("expected read=1, got %d", msg.Read)
+	if read != 1 {
+		t.Fatalf("expected read=1, got %d", read)
 	}
 }
 
 func TestReadNonexistent(t *testing.T) {
 	env := newTestEnv(t)
-	_, err := env.run("read", "nonexistent")
+	_, err := env.run(t, "read", "nonexistent")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -399,14 +216,10 @@ func TestEntitiesCommand(t *testing.T) {
 		{testAlice, testCharlie},
 	}
 	for i, m := range seeds {
-		_, err := env.q.SendMessage(t.Context(), db.SendMessageParams{
-			ID: fmt.Sprintf("e%d", i), Sender: m.s, Recipient: m.r, Content: "x",
-		})
-		if err != nil {
-			t.Fatalf("seed %d: %v", i, err)
-		}
+		env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+			fmt.Sprintf("e%d", i), m.s, m.r, "x")
 	}
-	output, err := env.run("entities")
+	output, err := env.run(t, "entities")
 	if err != nil {
 		t.Fatalf("entities failed: %v", err)
 	}
@@ -419,10 +232,9 @@ func TestEntitiesCommand(t *testing.T) {
 
 func TestEntitiesJSON(t *testing.T) {
 	env := newTestEnv(t)
-	_, _ = env.q.SendMessage(t.Context(), db.SendMessageParams{
-		ID: "ej", Sender: testAlice, Recipient: testBob, Content: "x",
-	})
-	output, err := env.run("entities", "--json")
+	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		"ej", testAlice, testBob, "x")
+	output, err := env.run(t, "entities", "--json")
 	if err != nil {
 		t.Fatalf("entities --json failed: %v", err)
 	}
@@ -433,8 +245,4 @@ func TestEntitiesJSON(t *testing.T) {
 	if len(entities) < 2 {
 		t.Fatalf("expected at least 2 entities, got %d", len(entities))
 	}
-}
-
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
 }
