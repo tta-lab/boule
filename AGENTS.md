@@ -14,6 +14,19 @@ make lint     # golangci-lint run ./...
 make fmt      # gofmt -w .
 ```
 
+### CLI
+
+```
+bo send --from <sender> <recipient>   # send message from stdin
+bo inbox <recipient> [--json]         # unread messages
+bo feed [--from] [--to] [--unread] [--json]  # all messages, optional filters
+bo read <id> [--json]                 # mark message as read
+bo entities [--json]                  # list all known sender/receiver identities
+```
+
+Default DB: `~/.boule/boule.db` (auto-created on first run, auto-migrated).
+Override with `bo --db /path/to/db`.
+
 ## Architecture
 
 ```
@@ -54,6 +67,7 @@ output, err := env.runWithStdin("hello", "send", "--from", "alice", "bob")
 
 - `internal/db/` is entirely sqlc-generated. Editing it by hand will be overwritten on next `sqlc generate`.
 - `db/migrations/*.sql` is also a sqlc source — regenerate after editing, don't assume it's just migration files.
+- `store.Open()` auto-runs migrations on every call. No separate migrate step needed.
 - `store.Open()` sets `MaxOpenConns(1)` — SQLite is single-writer. Don't add concurrent write paths without changing this.
 - No CGO — uses `modernc.org/sqlite` (pure Go). Works in minimal containers without gcc.
 - `lefthook.yml` runs gofmt + goimports on pre-commit, golangci-lint on pre-push.
