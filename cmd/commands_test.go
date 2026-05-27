@@ -39,10 +39,11 @@ func newTestEnv(t *testing.T) *testEnv {
 	return &testEnv{db: d, dbPath: dbPath}
 }
 
-func (e *testEnv) seed(t *testing.T, query string, args ...any) {
+func (e *testEnv) insert(t *testing.T, id, sender, recipient, content string) {
 	t.Helper()
-	if _, err := e.db.Exec(query, args...); err != nil {
-		t.Fatalf("seed %q: %v", query, err)
+	if _, err := e.db.Exec("INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
+		id, sender, recipient, content); err != nil {
+		t.Fatalf("insert %q: %v", id, err)
 	}
 }
 
@@ -96,8 +97,7 @@ func TestSendEmptyContent(t *testing.T) {
 
 func TestInboxCommand(t *testing.T) {
 	env := newTestEnv(t)
-	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-		"t1", testAlice, testBob, "inbox test")
+	env.insert(t, "t1", testAlice, testBob, "inbox test")
 	output, err := env.run(t, "inbox", testBob)
 	if err != nil {
 		t.Fatalf("inbox failed: %v", err)
@@ -120,8 +120,7 @@ func TestInboxEmpty(t *testing.T) {
 
 func TestInboxJSON(t *testing.T) {
 	env := newTestEnv(t)
-	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-		"tj", testAlice, testBob, "json test")
+	env.insert(t, "tj", testAlice, testBob, "json test")
 	output, err := env.run(t, "inbox", testBob, "--json")
 	if err != nil {
 		t.Fatalf("inbox --json failed: %v", err)
@@ -148,8 +147,7 @@ func TestFeedCommand(t *testing.T) {
 		{testAlice, testCharlie, "msg 3"},
 	}
 	for i, m := range seeds {
-		env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-			fmt.Sprintf("f%d", i), m.s, m.r, m.c)
+		env.insert(t, fmt.Sprintf("f%d", i), m.s, m.r, m.c)
 	}
 	output, err := env.run(t, "feed")
 	if err != nil {
@@ -164,10 +162,8 @@ func TestFeedCommand(t *testing.T) {
 
 func TestFeedFilterFrom(t *testing.T) {
 	env := newTestEnv(t)
-	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-		"f1", testAlice, testBob, "from alice")
-	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-		"f2", testBob, testAlice, "from bob")
+	env.insert(t, "f1", testAlice, testBob, "from alice")
+	env.insert(t, "f2", testBob, testAlice, "from bob")
 	output, err := env.run(t, "feed", "--from", testAlice)
 	if err != nil {
 		t.Fatalf("feed --from failed: %v", err)
@@ -182,8 +178,7 @@ func TestFeedFilterFrom(t *testing.T) {
 
 func TestReadCommand(t *testing.T) {
 	env := newTestEnv(t)
-	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-		"r1", testAlice, testBob, "read test")
+	env.insert(t, "r1", testAlice, testBob, "read test")
 	output, err := env.run(t, "read", "r1")
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
@@ -216,8 +211,7 @@ func TestEntitiesCommand(t *testing.T) {
 		{testAlice, testCharlie},
 	}
 	for i, m := range seeds {
-		env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-			fmt.Sprintf("e%d", i), m.s, m.r, "x")
+		env.insert(t, fmt.Sprintf("e%d", i), m.s, m.r, "x")
 	}
 	output, err := env.run(t, "entities")
 	if err != nil {
@@ -232,8 +226,7 @@ func TestEntitiesCommand(t *testing.T) {
 
 func TestEntitiesJSON(t *testing.T) {
 	env := newTestEnv(t)
-	env.seed(t, "INSERT INTO messages (id, sender, recipient, content) VALUES (?, ?, ?, ?)",
-		"ej", testAlice, testBob, "x")
+	env.insert(t, "ej", testAlice, testBob, "x")
 	output, err := env.run(t, "entities", "--json")
 	if err != nil {
 		t.Fatalf("entities --json failed: %v", err)
